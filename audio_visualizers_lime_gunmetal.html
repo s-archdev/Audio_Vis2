@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lime Chartreuse & Gunmetal Audio Visualizers</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #2a3439; /* Darker gunmetal */
+      font-family: 'Courier New', monospace;
+      color: #d9ffe0; /* Light lime */
+      overflow: hidden;
+    }
+    
+    .container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    #visualizer-canvas {
+      width: 100%;
+      height: 80%;
+    }
+    
+    .controls {
+      width: 100%;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      background-color: #1a2329; /* Darker gunmetal */
+      flex-wrap: wrap;
+    }
+    
+    button {
+      padding: 10px 15px;
+      background-color: #2a3439; /* Gunmetal */
+      color: #bfff00; /* Chartreuse */
+      border: 2px solid #90ee00; /* Lime */
+      border-radius: 0px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 0 10px #90ee00; /* Lime glow */
+      transition: all 0.3s ease;
+    }
+    
+    button:hover {
+      background-color: #90ee00; /* Lime */
+      color: #1a2329; /* Dark gunmetal */
+      box-shadow: 0 0 20px #bfff00; /* Chartreuse glow */
+    }
+    
+    #upload-label {
+      display: inline-block;
+      padding: 10px 15px;
+      background-color: #2a3439; /* Gunmetal */
+      color: #d9ffe0; /* Light lime */
+      border: 2px solid #d9ffe0; /* Light lime */
+      border-radius: 0px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 0 10px #d9ffe0; /* Light lime glow */
+      transition: all 0.3s ease;
+    }
+    
+    #upload-label:hover {
+      background-color: #d9ffe0; /* Light lime */
+      color: #1a2329; /* Dark gunmetal */
+      box-shadow: 0 0 20px #d9ffe0; /* Light lime glow */
+    }
+    
+    #file-upload {
+      display: none;
+    }
+
+    .title {
+      font-size: 24px;
+      margin: 10px 0;
+      color: #bfff00; /* Chartreuse */
+      text-shadow: 0 0 10px #90ee00; /* Lime glow */
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">AUDIO SPECTRUM VISUALIZER</h1>
+    <div id="visualizer-canvas"></div>
+    
+    <div class="controls">
+      <button id="play-demo">Play Demo</button>
+      <label id="upload-label" for="file-upload">Upload Audio</label>
+      <input type="file" id="file-upload" accept="audio/*">
+      <button id="visualizer-1">Geometric Pulse</button>
+      <button id="visualizer-2">Neon Grid</button>
+      <button id="visualizer-3">Digital Rain</button>
+      <button id="visualizer-4">Hexagon Field</button>
+      <button id="visualizer-5">Circuit Flow</button>
+    </div>
+  </div>
+
+  <script>
+    let sound;
+    let fft;
+    let mic;
+    let amplitude;
+    let currentVisualizer = 1;
+    let digitalRainDrops = [];
+    let hexagons = [];
+    let circuits = [];
+    
+    // Color palette - Lime, Chartreuse and Gunmetal variations
+    const colors = {
+      background: [26, 35, 41],      // Dark gunmetal
+      gunmetal: [42, 52, 57],        // Gunmetal
+      lightGunmetal: [76, 88, 102],  // Light gunmetal
+      lime: [144, 238, 0],           // Lime
+      chartreuse: [191, 255, 0],     // Chartreuse
+      lightLime: [217, 255, 224],    // Light lime
+      neonLime: [198, 255, 0]        // Bright lime
+    };
+    
+    function setup() {
+      const canvas = createCanvas(windowWidth, windowHeight * 0.8);
+      canvas.parent('visualizer-canvas');
+      
+      amplitude = new p5.Amplitude();
+      fft = new p5.FFT(0.8, 1024);
+      
+      // Create digital rain drops
+      for (let i = 0; i < 100; i++) {
+        digitalRainDrops.push(new DigitalRainDrop());
+      }
+      
+      // Create hexagons for the hexagon field
+      const hexSize = 40;
+      const horizontalSpacing = hexSize * 1.5;
+      const verticalSpacing = hexSize * 1.3;
+      
+      for (let y = 0; y < height + hexSize; y += verticalSpacing) {
+        const offset = (Math.floor(y / verticalSpacing) % 2) * (hexSize * 0.75);
+        for (let x = 0; x - offset < width + hexSize; x += horizontalSpacing) {
+          hexagons.push(new Hexagon(x - offset, y, hexSize));
+        }
+      }
+      
+      // Create circuits
+      for (let i = 0; i < 15; i++) {
+        circuits.push(new Circuit());
+      }
+      
+      // Event listeners for buttons
+      document.getElementById('play-demo').addEventListener('click', playDemo);
+      document.getElementById('file-upload').addEventListener('change', handleFileUpload);
+      document.getElementById('visualizer-1').addEventListener('click', () => setVisualizer(1));
+      document.getElementById('visualizer-2').addEventListener('click', () => setVisualizer(2));
+      document.getElementById('visualizer-3').addEventListener('click', () => setVisualizer(3));
+      document.getElementById('visualizer-4').addEventListener('click', () => setVisualizer(4));
+      document.getElementById('visualizer-5').addEventListener('click', () => setVisualizer(5));
+      
+      // Load demo sound
+      soundFormats('mp3', 'ogg');
+      sound = loadSound('https://cdn.freesound.org/previews/617/617306_5674468-lq.mp3');
+    }
+    
+    function draw() {
+      // Set background with subtle fade for trails
+      background(colors.background[0], colors.background[1], colors.background[2], 20);
+      
+      // Get audio analysis
+      let spectrum = fft.analyze();
+      let waveform = fft.waveform();
+      let level = amplitude.getLevel();
+      
+      // Draw selected visualizer
+      switch (currentVisualizer) {
+        case 1:
+          drawGeometricPulse(spectrum, level);
+          break;
+        case 2:
+          drawNeonGrid(spectrum, waveform);
+          break;
+        case 3:
+          drawDigitalRain(spectrum, level);
+          break;
+        case 4:
+          drawHexagonField(spectrum, level);
+          break;
+        case 5:
+          drawCircuitFlow(spectrum, waveform, level);
+          break;
+      }
+    }
+    
+    function drawGeometricPulse(spectrum, level) {
+      push();
+      translate(width / 2, height / 2);
+      
+      const bass = fft.getEnergy("bass");
+      const mid = fft.getEnergy("mid");
+      const treble = fft.getEnergy("treble");
+      
+      // Draw rotating squares with size based on frequency
+      const maxLayers = 10;
+      const baseRotation = frameCount * 0.005;
+      
+      for (let i = 0; i < maxLayers; i++) {
+        const sizeFactor = map(i, 0, maxLayers, 1, 0.2);
+        const rotationOffset = map(i, 0, maxLayers, 0, PI / 2);
+        
+        // Choose size based on frequency band
+        let size;
+        if (i < 3) {
+          size = map(bass, 0, 255, 50, 300) * sizeFactor;
+        } else if (i < 7) {
+          size = map(mid, 0, 255, 40, 250) * sizeFactor;
+        } else {
+          size = map(treble, 0, 255, 30, 200) * sizeFactor;
+        }
+        
+        // Choose color intensity based on sound level
+        const alpha = map(level, 0, 1, 50, 200);
+        
+        // Draw rotating square
+        push();
+        rotate(baseRotation + rotationOffset * i);
+        noFill();
+        strokeWeight(2);
+        
+        // Apply glowing effect
+        for (let j = 3; j > 0; j--) {
+          stroke(colors.lime[0], colors.lime[1], colors.lime[2], alpha / j);
+          rect(-size/2, -size/2, size, size);
+        }
+        
+        // Inner square with different color
+        rotate(PI / 4);
+        const innerSize = size * 0.7;
+        for (let j = 3; j > 0; j--) {
+          stroke(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], alpha / j);
+          rect(-innerSize/2, -innerSize/2, innerSize, innerSize);
+        }
+        
+        pop();
+      }
+      
+      // Draw concentric circles that pulse with the beat
+      for (let i = 0; i < 5; i++) {
+        const pulseRadius = map(level, 0, 1, 50, 200) * (1 - i * 0.15);
+        const alpha = map(i, 0, 5, 200, 50);
+        
+        // Glowing effect
+        for (let j = 3; j > 0; j--) {
+          noFill();
+          strokeWeight(3 / j);
+          stroke(colors.lightLime[0], colors.lightLime[1], colors.lightLime[2], alpha / j);
+          circle(0, 0, pulseRadius * 2 + j * 10);
+        }
+      }
+      
+      // Draw audio reactive lines
+      const lineCount = 12;
+      for (let i = 0; i < lineCount; i++) {
+        const angle = map(i, 0, lineCount, 0, TWO_PI);
+        const freqIndex = floor(map(i, 0, lineCount, 0, spectrum.length * 0.5));
+        const freqValue = spectrum[freqIndex];
+        const lineLength = map(freqValue, 0, 255, 50, width * 0.4);
+        
+        // Draw line with glow effect
+        for (let j = 5; j > 0; j--) {
+          stroke(colors.neonLime[0], colors.neonLime[1], colors.neonLime[2], 150 / j);
+          strokeWeight(j);
+          line(0, 0, lineLength * cos(angle), lineLength * sin(angle));
+        }
+      }
+      
+      pop();
+    }
+    
+    function drawNeonGrid(spectrum, waveform) {
+      // Draw horizontal and vertical grid lines
+      const gridSpacing = 40;
+      const waveAmplitude = 20;
+      
+      // Horizontal lines
+      for (let y = 0; y < height; y += gridSpacing) {
+        push();
+        noFill();
+        
+        // Main bright line
+        for (let i = 3; i > 0; i--) {
+          strokeWeight(i);
+          stroke(colors.lime[0], colors.lime[1], colors.lime[2], 100 / i);
+          
+          beginShape();
+          for (let x = 0; x < width; x += 5) {
+            // Sample from waveform to create wave effect
+            const waveIndex = floor(map(x, 0, width, 0, waveform.length));
+            const waveValue = waveform[waveIndex % waveform.length];
+            
+            // More wave effect on every other line
+            const waveY = y + (y % (gridSpacing * 2) === 0 ? 
+                               waveValue * waveAmplitude * 2 : 
+                               waveValue * waveAmplitude * 0.5);
+            
+            vertex(x, waveY);
+          }
+          endShape();
+        }
+        pop();
+      }
+      
+      // Vertical lines
+      for (let x = 0; x < width; x += gridSpacing) {
+        push();
+        noFill();
+        
+        // Check if this is a "beat" line
+        const freqIndex = floor(map(x, 0, width, 0, spectrum.length * 0.5));
+        const freqValue = spectrum[freqIndex % spectrum.length];
+        const isActive = freqValue > 180; // Threshold for "active" line
+        
+        // Different color for active lines
+        const lineColor = isActive ? colors.chartreuse : colors.lightGunmetal;
+        const alpha = isActive ? 200 : 100;
+        
+        // Main bright line with glow effect
+        for (let i = 3; i > 0; i--) {
+          strokeWeight(i);
+          stroke(lineColor[0], lineColor[1], lineColor[2], alpha / i);
+          
+          beginShape();
+          for (let y = 0; y < height; y += 5) {
+            // Sample from waveform to create wave effect
+            const waveIndex = floor(map(y, 0, height, 0, waveform.length));
+            const waveValue = waveform[waveIndex % waveform.length];
+            
+            // More wave effect on active lines
+            const waveX = x + (isActive ? 
+                               waveValue * waveAmplitude * 2 : 
+                               waveValue * waveAmplitude * 0.5);
+            
+            vertex(waveX, y);
+          }
+          endShape();
+        }
+        
+        // Add pulsing dots at intersections for active lines
+        if (isActive) {
+          for (let y = 0; y < height; y += gridSpacing) {
+            const pulseSize = map(freqValue, 0, 255, 5, 15);
+            
+            // Glowing dot
+            for (let i = 3; i > 0; i--) {
+              fill(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], 200 / i);
+              noStroke();
+              circle(x, y, pulseSize / i);
+            }
+          }
+        }
+        
+        pop();
+      }
+    }
+    
+    class DigitalRainDrop {
+      constructor() {
+        this.reset();
+        this.y = random(-500, 0); // Start above the canvas
+      }
+      
+      reset() {
+        this.x = random(width);
+        this.y = -20;
+        this.speed = random(2, 10);
+        this.length = random(10, 40);
+        this.char = floor(random(2));
+        this.size = random(10, 24);
+        this.alpha = random(150, 255);
+      }
+      
+      update(level) {
+        // Move down with speed boosted by audio level
+        this.y += this.speed * (1 + level * 2);
+        
+        // Reset when out of screen
+        if (this.y > height + this.length) {
+          this.reset();
+        }
+        
+        // Randomly change binary digit
+        if (random() < 0.1) {
+          this.char = floor(random(2));
+        }
+      }
+      
+      display() {
+        push();
+        textSize(this.size);
+        textAlign(CENTER);
+        
+        // Draw tail with gradient
+        for (let i = 0; i < this.length; i++) {
+          const yPos = this.y - i * (this.size * 0.5);
+          const alpha = map(i, 0, this.length, this.alpha, 0);
+          
+          fill(colors.lime[0], colors.lime[1], colors.lime[2], alpha);
+          text(this.char, this.x, yPos);
+        }
+        
+        // Draw head (brighter)
+        for (let i = 3; i > 0; i--) {
+          fill(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], 255 / i);
+          text(this.char, this.x, this.y);
+        }
+        pop();
+      }
+    }
+    
+    function drawDigitalRain(spectrum, level) {
+      // Update and display all rain drops
+      for (let drop of digitalRainDrops) {
+        drop.update(level);
+        drop.display();
+      }
+      
+      // Create horizontal data stream based on spectrum
+      push();
+      textSize(14);
+      textAlign(LEFT);
+      const rowHeight = 20;
+      
+      for (let row = 0; row < 10; row++) {
+        const y = row * rowHeight + 100;
+        let x = 0;
+        
+        // Map this row to a frequency range
+        const freqStart = floor(map(row, 0, 10, 0, spectrum.length * 0.8));
+        const freqEnd = floor(map(row + 1, 0, 10, 0, spectrum.length * 0.8));
+        
+        // Calculate average energy in this range
+        let totalEnergy = 0;
+        for (let i = freqStart; i < freqEnd; i++) {
+          totalEnergy += spectrum[i];
+        }
+        const avgEnergy = totalEnergy / (freqEnd - freqStart);
+        
+        // Generate binary string based on spectrum
+        const binaryChars = 100 * (level + 0.2);
+        for (let i = 0; i < binaryChars; i++) {
+          const freqIndex = freqStart + floor(map(i, 0, binaryChars, 0, freqEnd - freqStart));
+          const digit = (spectrum[freqIndex] > avgEnergy) ? "1" : "0";
+          
+          // Color intensity based on frequency energy
+          const energy = spectrum[freqIndex];
+          const alpha = map(energy, 0, 255, 50, 200);
+          
+          // Apply glowing effect to high energy digits
+          if (energy > 200) {
+            for (let j = 3; j > 0; j--) {
+              fill(colors.neonLime[0], colors.neonLime[1], colors.neonLime[2], alpha / j);
+              text(digit, x + random(-1, 1), y + random(-1, 1));
+            }
+          } else {
+            fill(colors.lime[0], colors.lime[1], colors.lime[2], alpha);
+            text(digit, x, y);
+          }
+          
+          x += 10;
+          if (x > width) break;
+        }
+      }
+      pop();
+    }
+    
+    class Hexagon {
+      constructor(x, y, size) {
+        this.x = x;
+        this.y = y;
+        this.size = size;
+        this.originalSize = size;
+        this.active = false;
+        this.pulsePhase = random(TWO_PI);
+        this.pulseSpeed = random(0.05, 0.1);
+      }
+      
+      update(spectrum, level) {
+        // Map this hexagon to a frequency band
+        const xNorm = map(this.x, 0, width, 0, 1);
+        const yNorm = map(this.y, 0, height, 0, 1);
+        
+        const freqIndex = floor(map(xNorm, 0, 1, 0, spectrum.length * 0.8));
+        const freqValue = spectrum[freqIndex];
+        
+        // Adjust size based on audio
+        const sizeFactor = map(freqValue, 0, 255, 0.8, 1.5);
+        this.size = this.originalSize * sizeFactor;
+        
+        // Determine if hexagon is active based on frequency energy
+        this.active = freqValue > 180;
+        
+        // Update pulse phase
+        this.pulsePhase += this.pulseSpeed * (1 + level);
+      }
+      
+      display() {
+        push();
+        const sides = 6;
+        const angle = TWO_PI / sides;
+        
+        // Determine base color and intensity
+        let baseColor = this.active ? colors.lime : colors.gunmetal;
+        const pulseValue = (sin(this.pulsePhase) + 1) * 0.5; // 0 to 1
+        const alpha = map(pulseValue, 0, 1, 50, 200);
+        
+        // Apply glowing effect for active hexagons
+        if (this.active) {
+          // Draw glow layers
+          for (let i = 3; i > 0; i--) {
+            noFill();
+            strokeWeight(i * 1.5);
+            stroke(baseColor[0], baseColor[1], baseColor[2], alpha / i);
+            beginShape();
+            for (let j = 0; j < sides; j++) {
+              const xPos = this.x + cos(angle * j) * (this.size + i * 5);
+              const yPos = this.y + sin(angle * j) * (this.size + i * 5);
+              vertex(xPos, yPos);
+            }
+            endShape(CLOSE);
+          }
+          
+          // Draw inner hexagon with chartreuse
+          fill(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], alpha * 0.3);
+          noStroke();
+          beginShape();
+          for (let j = 0; j < sides; j++) {
+            const xPos = this.x + cos(angle * j) * (this.size * 0.7);
+            const yPos = this.y + sin(angle * j) * (this.size * 0.7);
+            vertex(xPos, yPos);
+          }
+          endShape(CLOSE);
+        } else {
+          // Draw inactive hexagon with subtle glow
+          noFill();
+          strokeWeight(1);
+          stroke(baseColor[0], baseColor[1], baseColor[2], alpha);
+          beginShape();
+          for (let j = 0; j < sides; j++) {
+            const xPos = this.x + cos(angle * j) * this.size;
+            const yPos = this.y + sin(angle * j) * this.size;
+            vertex(xPos, yPos);
+          }
+          endShape(CLOSE);
+        }
+        pop();
+      }
+    }
+    
+    function drawHexagonField(spectrum, level) {
+      // Update and display all hexagons
+      for (let hex of hexagons) {
+        hex.update(spectrum, level);
+        hex.display();
+      }
+      
+      // Draw audio reactive center pulse
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const pulseSize = map(level, 0, 1, 50, 250);
+      
+      push();
+      // Glow effect
+      for (let i = 5; i > 0; i--) {
+        noFill();
+        strokeWeight(i);
+        stroke(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], 150 / i);
+        circle(centerX, centerY, pulseSize * 2);
+      }
+      
+      // Center hexagon
+      const sides = 6;
+      const angle = TWO_PI / sides;
+      fill(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], 100);
+      beginShape();
+      for (let j = 0; j < sides; j++) {
+        const xPos = centerX + cos(angle * j) * pulseSize;
+        const yPos = centerY + sin(angle * j) * pulseSize;
+        vertex(xPos, yPos);
+      }
+      endShape(CLOSE);
+      pop();
+    }
+    
+    class Circuit {
+      constructor() {
+        this.reset();
+        this.generatePath();
+      }
+      
+      reset() {
+        this.startX = random(width);
+        this.startY = random(height);
+        this.points = [];
+        this.segmentCount = floor(random(3, 10));
+        this.active = false;
+        this.pulsePos = 0;
+        this.pulseSpeed = random(2, 8);
+        this.totalLength = 0;
+      }
+      
+      generatePath() {
+        let x = this.startX;
+        let y = this.startY;
+        
+        this.points.push({x, y});
+        
+        for (let i = 0; i < this.segmentCount; i++) {
+          const angle = floor(random(4)) * HALF_PI; // Only horizontal or vertical lines
+          const length = random(30, 150);
+          
+          x += cos(angle) * length;
+          y += sin(angle) * length;
+          
+          // Keep within bounds
+          x = constrain(x, 0, width);
+          y = constrain(y, 0, height);
+          
+          this.points.push({x, y});
+          this.totalLength += length;
+        }
+      }
+      
+      update(level) {
+        // Randomly activate based on audio level
+        if (random() < level * 0.2) {
+          this.active = true;
+          this.pulsePos = 0;
+        }
+        
+        // Update pulse position
+        if (this.active) {
+          this.pulsePos += this.pulseSpeed * (1 + level * 2);
+          
+          // Reset when pulse completes
+          if (this.pulsePos > this.totalLength) {
+            this.active = false;
+            
+            // Sometimes regenerate a new path
+            if (random() < 0.3) {
+              this.reset();
+              this.generatePath();
+            }
+          }
+        }
+      }
+      
+      display() {
+        push();
+        
+        // Draw base circuit path
+        strokeWeight(1);
+        stroke(colors.lightGunmetal[0], colors.lightGunmetal[1], colors.lightGunmetal[2], 150);
+        noFill();
+        
+        for (let i = 0; i < this.points.length - 1; i++) {
+          line(this.points[i].x, this.points[i].y, 
+               this.points[i+1].x, this.points[i+1].y);
+        }
+        
+        // Draw connection points (nodes)
+        for (let i = 0; i < this.points.length; i++) {
+          fill(colors.lightGunmetal[0], colors.lightGunmetal[1], colors.lightGunmetal[2], 150);
+          noStroke();
+          circle(this.points[i].x, this.points[i].y, 5);
+        }
+        
+        // Draw energy pulse if active
+        if (this.active) {
+          let currentLength = 0;
+          let pulseFound = false;
+          let pulseX = 0;
+          let pulseY = 0;
+          
+          // Find position along the path
+          for (let i = 0; i < this.points.length - 1; i++) {
+            const segment = {
+              x1: this.points[i].x,
+              y1: this.points[i].y,
+              x2: this.points[i+1].x,
+              y2: this.points[i+1].y
+            };
+            
+            const segmentLength = dist(segment.x1, segment.y1, segment.x2, segment.y2);
+            
+            if (currentLength + segmentLength >= this.pulsePos && !pulseFound) {
+              // Calculate position within this segment
+              const segmentPos = (this.pulsePos - currentLength) / segmentLength;
+              pulseX = lerp(segment.x1, segment.x2, segmentPos);
+              pulseY = lerp(segment.y1, segment.y2, segmentPos);
+              pulseFound = true;
+              
+              // Draw glowing segment
+              for (let j = 5; j > 0; j--) {
+                strokeWeight(j);
+                stroke(colors.lime[0], colors.lime[1], colors.lime[2], 200 / j);
+                line(segment.x1, segment.y1, pulseX, pulseY);
+              }
+            }
+            
+            currentLength += segmentLength;
+          }
+          
+          // Draw pulse glow
+          if (pulseFound) {
+            for (let i = 5; i > 0; i--) {
+              fill(colors.neonLime[0], colors.neonLime[1], colors.neonLime[2], 200 / i);
+              noStroke();
+              circle(pulseX, pulseY, 10 * i);
+            }
+          }
+        }
+        
+        pop();
+      }
+    }
+    
+    function drawCircuitFlow(spectrum, waveform, level) {
+      // Update and display all circuits
+      for (let circuit of circuits) {
+        circuit.update(level);
+        circuit.display();
+      }
+      
+      // Draw spectrum analyzer at the bottom
+      const barWidth = width / 128;
+      const barHeight = height * 0.3;
+      const barY = height * 0.7;
+      
+      push();
+      for (let i = 0; i < 128; i++) {
+        const x = i * barWidth;
+        const freqValue = spectrum[i * 2];
+        const h = map(freqValue, 0, 255, 0, barHeight);
+        
+        // Draw bar with glow based on frequency
+        const energy = freqValue / 255;
+        
+        // Different color for different frequency ranges
+        let barColor;
+        if (i < 30) { // Bass
+          barColor = colors.lime;
+        } else if (i < 80) { // Mid
+          barColor = colors.chartreuse;
+        } else { // Treble
+          barColor = colors.lightLime;
+        }
+        
+        // Draw bar with glow effect
+        for (let j = 3; j > 0; j--) {
+          fill(barColor[0], barColor[1], barColor[2], 150 / j);
+          noStroke();
+          rect(x, barY - h, barWidth - 1, h, 2);
+        }
+        
+        // Add pulse effect for high energy frequencies
+        if (freqValue > 200) {
+          for (let j = 5; j > 0; j--) {
+            fill(colors.neonLime[0], colors.neonLime[1], colors.neonLime[2], 100 / j);
+            circle(x + barWidth/2, barY - h - 10, 20 / j);
+          }
+        }
+      }
+      
+      // Draw data flow visualization on the top
+      const waveY = height * 0.3;
+      noFill();
+      
+      // Draw main waveform
+      for (let i = 3; i > 0; i--) {
+        beginShape();
+        strokeWeight(i);
+        stroke(colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2], 200 / i);
+        
+        for (let x = 0; x < width; x += 5) {
+          const waveIndex = floor(map(x, 0, width, 0, waveform.length));
+          const waveValue = waveform[waveIndex];
+          const y = waveY + waveValue * 100;
+          vertex(x, y);
+        }
+        endShape();
+      }
+      
+      // Draw digital bits along the waveform
+      for (let x = 0; x < width; x += 20) {
+        const waveIndex = floor(map(x, 0, width, 0, waveform.length));
+        const waveValue = waveform[waveIndex];
+        const y = waveY + waveValue * 100;
+        
+        const digit = floor(random(2));
+        textSize(10);
+        
+        if (abs(waveValue) > 0.5) {
+          // Bright digits for high amplitude
+          for (let i = 3; i > 0; i--) {
+            fill(colors.neonLime[0], colors.neonLime[1], colors.neonLime[2], 200 / i);
+            text(digit, x, y);
+          }
+        } else {
+          fill(colors.lime[0], colors.lime[1], colors.lime[2], 150);
+          text(digit, x, y);
+        }
+      }
+      
+      pop();
+    }
+    
+    function playDemo() {
+      if (sound.isPlaying()) {
+        sound.stop();
+        document.getElementById('play-demo').textContent = 'Play Demo';
+      } else {
+        sound.play();
+        document.getElementById('play-demo').textContent = 'Stop Demo';
+      }
+    }
+    
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        if (sound && sound.isPlaying()) {
+          sound.stop();
+          document.getElementById('play-demo').textContent = 'Play Demo';
+        }
+        
+        // Load the uploaded audio file
+        sound = loadSound(URL.createObjectURL(file), () => {
+          sound.play();
+          document.getElementById('play-demo').textContent = 'Stop Audio';
+        });
+      }
+    }
+    
+    function setVisualizer(index) {
+      currentVisualizer = index;
+      
+      // Highlight selected button
+      const buttons = document.querySelectorAll('.controls button');
+      for (let i = 0; i < buttons.length; i++) {
+        if (i === 0) continue; // Skip the Play Demo button
+        
+        const btn = buttons[i];
+        if (i === index) {
+          btn.style.boxShadow = `0 0 20px ${colors.chartreuse[0]}, ${colors.chartreuse[1]}, ${colors.chartreuse[2]}`;
+          btn.style.backgroundColor = colors.lime[0], colors.lime[1], colors.lime[2];
+          btn.style.color = colors.background[0], colors.background[1], colors.background[2];
+        } else {
+          btn.style.boxShadow = `0 0 10px ${colors.lime[0]}, ${colors.lime[1]}, ${colors.lime[2]}`;
+          btn.style.backgroundColor = colors.gunmetal[0], colors.gunmetal[1], colors.gunmetal[2];
+          btn.style.color = colors.chartreuse[0], colors.chartreuse[1], colors.chartreuse[2];
+        }
+      }
+    }
+    
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight * 0.8);
+      
+      // Recalculate hexagon positions
+      hexagons = [];
+      const hexSize = 40;
+      const horizontalSpacing = hexSize * 1.5;
+      const verticalSpacing = hexSize * 1.3;
+      
+      for (let y = 0; y < height + hexSize; y += verticalSpacing) {
+        const offset = (Math.floor(y / verticalSpacing) % 2) * (hexSize * 0.75);
+        for (let x = 0; x - offset < width + hexSize; x += horizontalSpacing) {
+          hexagons.push(new Hexagon(x - offset, y, hexSize));
+        }
+      }
+    }
+  </script>
+</body>
+</html>
+          barColor
