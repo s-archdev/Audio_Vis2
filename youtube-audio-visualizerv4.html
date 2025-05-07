@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Audio Visualizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #121212;
+            color: #f0f0f0;
+            text-align: center;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        #youtube-player {
+            width: 100%;
+            max-width: 800px;
+            height: 450px;
+            margin: 20px auto;
+        }
+        #visualizer-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        #visualizer {
+            width: 100%;
+            max-width: 800px;
+            height: 200px;
+            background-color: #1e1e1e;
+            border-radius: 5px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 70%;
+            max-width: 500px;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #ff0000;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #cc0000;
+        }
+        .visualization-controls {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .visualization-controls select, 
+        .visualization-controls input {
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+        }
+        .color-picker {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .color-picker input {
+            width: 50px;
+            height: 30px;
+            padding: 0;
+            border: none;
+        }
+        #status {
+            margin: 10px 0;
+            color: #ffcc00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Audio Visualizer</h1>
+        
+        <div class="controls">
+            <input type="text" id="youtube-url" placeholder="Paste YouTube URL here (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)">
+            <button id="load-button">Load Video</button>
+        </div>
+        
+        <div id="status">Click to initialize audio context</div>
+        
+        <div id="youtube-player"></div>
+        
+        <div class="visualization-controls">
+            <div class="control-group">
+                <label for="visualization-type">Visualization Type:</label>
+                <select id="visualization-type">
+                    <option value="bars">Bars</option>
+                    <option value="wave">Wave</option>
+                    <option value="circle">Circle</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="sensitivity">Sensitivity:</label>
+                <input type="range" id="sensitivity" min="1" max="10" value="5">
+            </div>
+            
+            <div class="color-picker">
+                <label for="primary-color">Color:</label>
+                <input type="color" id="primary-color" value="#ff0000">
+            </div>
+        </div>
+        
+        <div id="visualizer-container">
+            <canvas id="visualizer"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const youtubeUrlInput = document.getElementById('youtube-url');
+        const loadButton = document.getElementById('load-button');
+        const visualizerCanvas = document.getElementById('visualizer');
+        const visualizerType = document.getElementById('visualization-type');
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const primaryColor = document.getElementById('primary-color');
+        const statusElement = document.getElementById('status');
+        
+        // Canvas context
+        const ctx = visualizerCanvas.getContext('2d');
+        
+        // YouTube API variables
+        let player;
+        let videoId = 'dQw4w9WgXcQ'; // Default video (Rick Astley - Never Gonna Give You Up)
+        
+        // Audio context and analysis
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let bufferLength;
+        
+        // Visualization variables
+        let animationId;
+        let isPlaying = false;
+        let visualizationActive = false;
+        
+        // Load YouTube IFrame API
+        function loadYouTubeAPI() {
+            const tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            const firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        }
+        
+        // Initialize YouTube player when API is ready
+        window.onYouTubeIframeAPIReady = function() {
+            player = new YT.Player('youtube-player', {
+                height: '450',
+                width: '800',
+                videoId: videoId,
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                },
+                playerVars: {
+                    'autoplay': 0,
+                    'controls': 1,
+                    'rel': 0
+                }
+            });
+        };
+        
+        // When player is ready
+        function onPlayerReady(event) {
+            statusElement.textContent = "Video ready. Click anywhere to initialize audio context, then play the video.";
+        }
+        
+        // Handle player state changes
+        function onPlayerStateChange(event) {
+            if (event.data === YT.PlayerState.PLAYING) {
+                if (!visualizationActive && audioContext) {
+                    startVisualization();
+                    visualizationActive = true;
+                }
+            } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                // Keep visualization running but in a lower state
+            }
+        }
+        
+        // Initialize audio context (must be done after user interaction)
+        function initAudioContext() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                
+                // Set up canvas
+                resizeCanvas();
+                
+                statusElement.textContent = "Audio context initialized. Play the video to start visualization.";
+            } catch (e) {
+                console.error("Audio context initialization failed:", e);
+                statusElement.textContent = "Failed to initialize audio context: " + e.message;
+            }
+        }
+        
+        // Resize canvas to match container
+        function resizeCanvas() {
+            visualizerCanvas.width = visualizerCanvas.offsetWidth;
+            visualizerCanvas.height = visualizerCanvas.offsetHeight;
+        }
+        
+        // Start visualization
+        function startVisualization() {
+            if (!analyser) return;
+            
+            // Clear any existing animation
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+            
+            // Animation function
+            function animate() {
+                animationId = requestAnimationFrame(animate);
+                
+                // Generate data based on video time
+                generateVisualizationData();
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+                
+                // Draw visualization
+                const type = visualizerType.value;
+                const sensitivity = sensitivitySlider.value / 5;
+                const color = primaryColor.value;
+                
+                if (type === 'bars') {
+                    drawBars(color, sensitivity);
+                } else if (type === 'wave') {
+                    drawWave(color, sensitivity);
+                } else if (type === 'circle') {
+                    drawCircle(color, sensitivity);
+                }
+            }
+            
+            animate();
+        }
+        
+        // Generate visualization data based on video playback
+        function generateVisualizationData() {
+            if (!player || !dataArray) return;
+            
+            const currentTime = player.getCurrentTime();
+            const playerState = player.getPlayerState();
+            const isVideoPlaying = playerState === YT.PlayerState.PLAYING;
+            
+            // Generate data based on video time
+            for (let i = 0; i < bufferLength; i++) {
+                // Base value that changes with frequency bin
+                let value = 128 + (Math.sin(i / bufferLength * Math.PI * 2) * 40);
+                
+                // Add time-based variations
+                if (isVideoPlaying) {
+                    // More dramatic changes when video is playing
+                    value += Math.sin(currentTime * 2 + i / 10) * 50;
+                    value += Math.cos(currentTime * 3 + i / 5) * 30;
+                    
+                    // Random peaks to simulate beats
+                    if (Math.random() < 0.01) {
+                        value += 100;
+                    }
+                } else {
+                    // Subtle movement when paused
+                    value += Math.sin(Date.now() / 1000 + i / 10) * 20;
+                }
+                
+                // Clamp to valid range
+                dataArray[i] = Math.max(0, Math.min(255, value));
+            }
+            
+            // Simulate bass frequencies for more visual impact
+            if (isVideoPlaying) {
+                for (let i = 0; i < bufferLength / 8; i++) {
+                    const bassValue = 150 + Math.sin(currentTime * 4) * 50 + Math.random() * 30;
+                    dataArray[i] = Math.max(dataArray[i], Math.min(255, bassValue));
+                }
+            }
+        }
+        
+        // Draw bars visualization
+        function drawBars(color, sensitivity) {
+            const barWidth = visualizerCanvas.width / bufferLength * 2.5;
+            let x = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = dataArray[i] * sensitivity;
+                
+                const gradient = ctx.createLinearGradient(0, visualizerCanvas.height - barHeight, 0, visualizerCanvas.height);
+                gradient.addColorStop(0, color);
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+                
+                x += barWidth + 1;
+            }
+        }
+        
+        // Draw wave visualization
+        function drawWave(color, sensitivity) {
+            ctx.beginPath();
+            
+            const sliceWidth = visualizerCanvas.width / bufferLength;
+            let x = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = (v * visualizerCanvas.height / 2) * sensitivity;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // Draw circle visualization
+        function drawCircle(color, sensitivity) {
+            const centerX = visualizerCanvas.width / 2;
+            const centerY = visualizerCanvas.height / 2;
+            const baseRadius = Math.min(centerX, centerY) * 0.8;
+            
+            // Draw base circle
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, baseRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Draw reactive spikes
+            for (let i = 0; i < bufferLength; i++) {
+                const amplitude = dataArray[i] * sensitivity / 80;
+                const angle = (i / bufferLength) * Math.PI * 2;
+                
+                const x1 = centerX + Math.cos(angle) * baseRadius;
+                const y1 = centerY + Math.sin(angle) * baseRadius;
+                const x2 = centerX + Math.cos(angle) * (baseRadius + amplitude);
+                const y2 = centerY + Math.sin(angle) * (baseRadius + amplitude);
+                
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        
+        // Extract video ID from YouTube URL
+        function getYouTubeVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            
+            if (match && match[2].length === 11) {
+                return match[2];
+            } else {
+                return null;
+            }
+        }
+        
+        // Event listeners
+        loadButton.addEventListener('click', () => {
+            const url = youtubeUrlInput.value;
+            const newVideoId = getYouTubeVideoId(url);
+            
+            if (newVideoId) {
+                videoId = newVideoId;
+                if (player && player.loadVideoById) {
+                    player.loadVideoById(videoId);
+                    
+                    // Ensure audio context is initialized
+                    if (!audioContext) {
+                        initAudioContext();
+                    }
+                } else {
+                    statusElement.textContent = "YouTube player not ready yet. Please try again in a moment.";
+                }
+            } else {
+                statusElement.textContent = "Invalid YouTube URL. Please enter a valid YouTube video URL.";
+            }
+        });
+        
+        visualizerType.addEventListener('change', () => {
+            // Restart visualization if needed
+            if (visualizationActive && !animationId) {
+                startVisualization();
+            }
+        });
+        
+        // Initialize audio context on user interaction
+        document.addEventListener('click', () => {
+            if (!audioContext) {
+                initAudioContext();
+            }
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Load YouTube API on page load
+        loadYouTubeAPI();
+    </script>
+</body>
+</html>
