@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Audio Visualizer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #121212;
+            color: #f0f0f0;
+            text-align: center;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        #youtube-player {
+            width: 100%;
+            max-width: 800px;
+            height: 450px;
+            margin: 20px auto;
+        }
+        #visualizer-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        #visualizer {
+            width: 100%;
+            max-width: 800px;
+            height: 200px;
+            background-color: #1e1e1e;
+            border-radius: 5px;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 70%;
+            max-width: 500px;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #ff0000;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #cc0000;
+        }
+        .visualization-controls {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .visualization-controls select, 
+        .visualization-controls input {
+            padding: 8px;
+            border-radius: 5px;
+            border: none;
+        }
+        .color-picker {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .color-picker input {
+            width: 50px;
+            height: 30px;
+            padding: 0;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>YouTube Audio Visualizer</h1>
+        
+        <div class="controls">
+            <input type="text" id="youtube-url" placeholder="Paste YouTube URL here (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)">
+            <button id="load-button">Load Video</button>
+        </div>
+        
+        <div id="youtube-player"></div>
+        
+        <div class="visualization-controls">
+            <div class="control-group">
+                <label for="visualization-type">Visualization Type:</label>
+                <select id="visualization-type">
+                    <option value="bars">Bars</option>
+                    <option value="wave">Wave</option>
+                    <option value="circle">Circle</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="sensitivity">Sensitivity:</label>
+                <input type="range" id="sensitivity" min="1" max="10" value="5">
+            </div>
+            
+            <div class="color-picker">
+                <label for="primary-color">Color:</label>
+                <input type="color" id="primary-color" value="#ff0000">
+            </div>
+        </div>
+        
+        <div id="visualizer-container">
+            <canvas id="visualizer"></canvas>
+        </div>
+    </div>
+
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // DOM Elements
+        const youtubeUrlInput = document.getElementById('youtube-url');
+        const loadButton = document.getElementById('load-button');
+        const visualizerCanvas = document.getElementById('visualizer');
+        const visualizerType = document.getElementById('visualization-type');
+        const sensitivitySlider = document.getElementById('sensitivity');
+        const primaryColor = document.getElementById('primary-color');
+        
+        // Canvas context
+        const ctx = visualizerCanvas.getContext('2d');
+        
+        // YouTube API variables
+        let player;
+        let videoId = 'dQw4w9WgXcQ'; // Default video
+        
+        // Audio variables
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let bufferLength;
+        let source;
+        
+        // Visualization variables
+        let animationId;
+        let isPlaying = false;
+        
+        // Initialize the YouTube player
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('youtube-player', {
+                height: '450',
+                width: '800',
+                videoId: videoId,
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                },
+                playerVars: {
+                    'autoplay': 0,
+                    'controls': 1,
+                    'rel': 0,
+                    'showinfo': 0
+                }
+            });
+        }
+        
+        // When the player is ready
+        function onPlayerReady(event) {
+            console.log('Player ready');
+            setupAudioAnalyser();
+        }
+        
+        // Handle player state changes
+        function onPlayerStateChange(event) {
+            // 1 is playing, 2 is paused
+            if (event.data === YT.PlayerState.PLAYING) {
+                if (!isPlaying) {
+                    startVisualization();
+                    isPlaying = true;
+                }
+            } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                isPlaying = false;
+                cancelAnimationFrame(animationId);
+            }
+        }
+        
+        // Set up the audio analyzer
+        function setupAudioAnalyser() {
+            // Since we can't directly access the YouTube audio stream,
+            // we'll use the video's audio from the iframe
+            try {
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                
+                // Set up analyser
+                analyser.fftSize = 256;
+                bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                
+                // Adjust canvas size
+                visualizerCanvas.width = visualizerCanvas.offsetWidth;
+                visualizerCanvas.height = visualizerCanvas.offsetHeight;
+                
+                // Create an audio source using the YouTube iframe as input
+                // This is where we would normally connect to the YouTube audio,
+                // but direct access is restricted. We'll use a workaround.
+                setupAudioSourceMonitoring();
+            } catch (e) {
+                console.error('Error setting up audio analyser:', e);
+            }
+        }
+        
+        // Set up audio source monitoring using the YouTube iframe
+        function setupAudioSourceMonitoring() {
+            // Since we cannot directly access YouTube's audio stream,
+            // we'll use a workaround to create visualization based on simulated audio data
+            console.log('Setting up audio source monitoring');
+            
+            // Create an oscillator node (will be used for simulated audio data)
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            
+            // Connect oscillator to analyzer
+            oscillator.connect(analyser);
+            analyser.connect(audioContext.destination);
+            
+            // Start the oscillator but keep it silent
+            oscillator.start();
+            oscillator.frequency.setValueAtTime(0, audioContext.currentTime);
+        }
+        
+        // Start visualization
+        function startVisualization() {
+            if (!analyser) return;
+            
+            // Resume audio context if it's suspended
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            
+            // Animation function
+            function animate() {
+                animationId = requestAnimationFrame(animate);
+                
+                // Get frequency data
+                analyser.getByteFrequencyData(dataArray);
+                
+                // Clear canvas
+                ctx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+                
+                // Get YouTube player current time to create dynamic visualization
+                const currentTime = player.getCurrentTime();
+                
+                // Visualize based on selected type
+                const type = visualizerType.value;
+                const sensitivity = sensitivitySlider.value / 5;
+                const color = primaryColor.value;
+                
+                if (type === 'bars') {
+                    drawBars(color, sensitivity, currentTime);
+                } else if (type === 'wave') {
+                    drawWave(color, sensitivity, currentTime);
+                } else if (type === 'circle') {
+                    drawCircle(color, sensitivity, currentTime);
+                }
+                
+                // Simulate audio data based on video playback position
+                simulateAudioData(currentTime);
+            }
+            
+            animate();
+        }
+        
+        // Simulate audio data based on video playback
+        function simulateAudioData(currentTime) {
+            if (!dataArray) return;
+            
+            // Create simulated audio data based on video time
+            // This is just for visualization purposes since we can't access the actual audio stream
+            for (let i = 0; i < bufferLength; i++) {
+                // Create patterns based on time and array position
+                const frequency = (i / bufferLength) * 10;
+                const amplitude = Math.sin(currentTime * frequency) * 50;
+                const videoBasedAmplitude = Math.sin(currentTime * 2 + i / 10) * 50;
+                
+                // Combine different patterns for more organic visualization
+                let value = 128 + amplitude + videoBasedAmplitude;
+                
+                // Add some randomness
+                value += Math.random() * 30;
+                
+                // Constrain to valid range
+                dataArray[i] = Math.max(0, Math.min(255, value));
+            }
+            
+            // If the video is playing, make the visualization more active
+            if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                // Boost some frequencies based on video position
+                const peakFrequency = Math.floor(Math.sin(currentTime) * bufferLength/4) + bufferLength/2;
+                for (let i = peakFrequency - 5; i < peakFrequency + 5; i++) {
+                    if (i >= 0 && i < bufferLength) {
+                        dataArray[i] = Math.min(255, dataArray[i] + 100);
+                    }
+                }
+            }
+        }
+        
+        // Draw bars visualization
+        function drawBars(color, sensitivity, currentTime) {
+            const barWidth = visualizerCanvas.width / bufferLength * 2.5;
+            let x = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const barHeight = dataArray[i] * sensitivity;
+                
+                // Gradient effect based on height
+                const gradient = ctx.createLinearGradient(0, visualizerCanvas.height - barHeight, 0, visualizerCanvas.height);
+                gradient.addColorStop(0, color);
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+                
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+                
+                x += barWidth + 1;
+            }
+        }
+        
+        // Draw wave visualization
+        function drawWave(color, sensitivity, currentTime) {
+            ctx.beginPath();
+            ctx.moveTo(0, visualizerCanvas.height / 2);
+            
+            const sliceWidth = visualizerCanvas.width / bufferLength;
+            let x = 0;
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = (v * visualizerCanvas.height / 2) * sensitivity;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            ctx.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        // Draw circle visualization
+        function drawCircle(color, sensitivity, currentTime) {
+            const centerX = visualizerCanvas.width / 2;
+            const centerY = visualizerCanvas.height / 2;
+            const radius = Math.min(centerX, centerY) * 0.8;
+            
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            for (let i = 0; i < bufferLength; i++) {
+                const amplitude = dataArray[i] * sensitivity / 80;
+                const angle = (i / bufferLength) * Math.PI * 2;
+                
+                const x1 = centerX + Math.cos(angle) * radius;
+                const y1 = centerY + Math.sin(angle) * radius;
+                const x2 = centerX + Math.cos(angle) * (radius + amplitude);
+                const y2 = centerY + Math.sin(angle) * (radius + amplitude);
+                
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        
+        // Extract video ID from YouTube URL
+        function getYouTubeVideoId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            
+            if (match && match[2].length === 11) {
+                return match[2];
+            } else {
+                return null;
+            }
+        }
+        
+        // Event listeners
+        loadButton.addEventListener('click', () => {
+            const url = youtubeUrlInput.value;
+            const newVideoId = getYouTubeVideoId(url);
+            
+            if (newVideoId) {
+                videoId = newVideoId;
+                player.loadVideoById(videoId);
+                
+                // Resume audio context if needed
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+            } else {
+                alert('Invalid YouTube URL. Please enter a valid YouTube video URL.');
+            }
+        });
+        
+        visualizerType.addEventListener('change', () => {
+            // Restart visualization if playing
+            if (isPlaying) {
+                cancelAnimationFrame(animationId);
+                startVisualization();
+            }
+        });
+        
+        // Responsive canvas
+        window.addEventListener('resize', () => {
+            visualizerCanvas.width = visualizerCanvas.offsetWidth;
+            visualizerCanvas.height = visualizerCanvas.offsetHeight;
+        });
+        
+        // Initialize audio context and analyser on user interaction
+        document.addEventListener('click', () => {
+            if (!audioContext) {
+                setupAudioAnalyser();
+            }
+        });
+
+        // Call YouTube API function
+        if (typeof YT === 'undefined' || typeof YT.Player === 'undefined') {
+            window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+        } else {
+            onYouTubeIframeAPIReady();
+        }
+    </script>
+</body>
+</html>
