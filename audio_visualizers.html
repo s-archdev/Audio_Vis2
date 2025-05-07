@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neon Audio Visualizers</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #111;
+      font-family: Arial, sans-serif;
+      color: #fff;
+      overflow: hidden;
+    }
+    
+    .container {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    
+    #visualizer-canvas {
+      width: 100%;
+      height: 80%;
+    }
+    
+    .controls {
+      width: 100%;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    button {
+      padding: 10px 15px;
+      background-color: #222;
+      color: #0ff;
+      border: 2px solid #0ff;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 0 10px #0ff;
+      transition: all 0.3s ease;
+    }
+    
+    button:hover {
+      background-color: #0ff;
+      color: #222;
+      box-shadow: 0 0 20px #0ff;
+    }
+    
+    #upload-label {
+      display: inline-block;
+      padding: 10px 15px;
+      background-color: #222;
+      color: #f0f;
+      border: 2px solid #f0f;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 0 10px #f0f;
+      transition: all 0.3s ease;
+    }
+    
+    #upload-label:hover {
+      background-color: #f0f;
+      color: #222;
+      box-shadow: 0 0 20px #f0f;
+    }
+    
+    #file-upload {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="visualizer-canvas"></div>
+    
+    <div class="controls">
+      <button id="play-demo">Play Demo</button>
+      <label id="upload-label" for="file-upload">Upload Audio</label>
+      <input type="file" id="file-upload" accept="audio/*">
+      <button id="visualizer-1">Neon Circles</button>
+      <button id="visualizer-2">Neon Waves</button>
+      <button id="visualizer-3">Neon Particles</button>
+      <button id="visualizer-4">Neon Spectrum</button>
+    </div>
+  </div>
+
+  <script>
+    let sound;
+    let fft;
+    let mic;
+    let amplitude;
+    let currentVisualizer = 1;
+    let particles = [];
+    let particleCount = 100;
+    
+    // Neon color palette
+    const neonPalette = [
+      [0, 255, 255],    // Cyan
+      [255, 0, 255],    // Magenta
+      [0, 255, 0],      // Green
+      [255, 255, 0],    // Yellow
+      [255, 0, 128],    // Pink
+      [128, 0, 255]     // Purple
+    ];
+    
+    function setup() {
+      const canvas = createCanvas(windowWidth, windowHeight * 0.8);
+      canvas.parent('visualizer-canvas');
+      
+      amplitude = new p5.Amplitude();
+      fft = new p5.FFT(0.8, 1024);
+      
+      // Create particles for Particle visualizer
+      for (let i = 0; i < particleCount; i++) {
+        particles.push(new Particle());
+      }
+      
+      // Event listeners for buttons
+      document.getElementById('play-demo').addEventListener('click', playDemo);
+      document.getElementById('file-upload').addEventListener('change', handleFileUpload);
+      document.getElementById('visualizer-1').addEventListener('click', () => setVisualizer(1));
+      document.getElementById('visualizer-2').addEventListener('click', () => setVisualizer(2));
+      document.getElementById('visualizer-3').addEventListener('click', () => setVisualizer(3));
+      document.getElementById('visualizer-4').addEventListener('click', () => setVisualizer(4));
+      
+      // Load demo sound
+      soundFormats('mp3', 'ogg');
+      sound = loadSound('https://cdn.freesound.org/previews/617/617306_5674468-lq.mp3');
+    }
+    
+    function draw() {
+      background(0, 10);
+      
+      // Get audio analysis
+      let spectrum = fft.analyze();
+      let waveform = fft.waveform();
+      let level = amplitude.getLevel();
+      
+      // Draw selected visualizer
+      switch (currentVisualizer) {
+        case 1:
+          drawNeonCircles(spectrum, level);
+          break;
+        case 2:
+          drawNeonWaves(waveform);
+          break;
+        case 3:
+          drawNeonParticles(spectrum, level);
+          break;
+        case 4:
+          drawNeonSpectrum(spectrum);
+          break;
+      }
+    }
+    
+    function drawNeonCircles(spectrum, level) {
+      translate(width / 2, height / 2);
+      
+      const bass = fft.getEnergy("bass");
+      const mid = fft.getEnergy("mid");
+      const treble = fft.getEnergy("treble");
+      
+      // Draw bass circles (cyan)
+      drawGlowingCircle(0, 0, 100 + bass * 1.5, [0, 255, 255], bass / 255);
+      
+      // Draw mid circles (magenta)
+      drawGlowingCircle(0, 0, 200 + mid, [255, 0, 255], mid / 255);
+      
+      // Draw treble circles (green)
+      drawGlowingCircle(0, 0, 300 + treble * 0.5, [0, 255, 0], treble / 255);
+      
+      // Draw center burst
+      const burstSize = 50 + level * 100;
+      drawGlowingCircle(0, 0, burstSize, [255, 255, 255], level);
+      
+      // Draw spectrum circles
+      for (let i = 0; i < spectrum.length; i += 20) {
+        const angle = map(i, 0, spectrum.length, 0, TWO_PI);
+        const amp = spectrum[i] * 1.5;
+        const r = 150 + amp;
+        const x = r * cos(angle);
+        const y = r * sin(angle);
+        
+        const colorIndex = floor(map(i, 0, spectrum.length, 0, neonPalette.length));
+        const color = neonPalette[colorIndex % neonPalette.length];
+        
+        drawGlowingCircle(x, y, amp / 10, color, 0.8);
+      }
+    }
+    
+    function drawGlowingCircle(x, y, diameter, color, intensity) {
+      const glowStrength = intensity * 20;
+      
+      // Draw glow effect
+      for (let i = 5; i > 0; i--) {
+        noFill();
+        strokeWeight(i * 2);
+        stroke(color[0], color[1], color[2], intensity * 255 / i);
+        circle(x, y, diameter + i * glowStrength);
+      }
+      
+      // Draw solid circle
+      fill(color[0], color[1], color[2], intensity * 255);
+      noStroke();
+      circle(x, y, diameter);
+    }
+    
+    function drawNeonWaves(waveform) {
+      stroke(0, 255, 255);
+      strokeWeight(3);
+      noFill();
+      
+      // Draw cyan waveform
+      beginShape();
+      for (let i = 0; i < waveform.length; i++) {
+        const x = map(i, 0, waveform.length, 0, width);
+        const y = map(waveform[i], -1, 1, height * 0.25, height * 0.75);
+        vertex(x, y);
+      }
+      endShape();
+      
+      // Draw magenta echo
+      stroke(255, 0, 255, 150);
+      strokeWeight(2);
+      beginShape();
+      for (let i = 0; i < waveform.length; i++) {
+        const x = map(i, 0, waveform.length, 0, width);
+        const y = map(waveform[i], -0.8, 0.8, height * 0.3, height * 0.7);
+        vertex(x, y);
+      }
+      endShape();
+      
+      // Draw green echo
+      stroke(0, 255, 0, 100);
+      strokeWeight(1);
+      beginShape();
+      for (let i = 0; i < waveform.length; i++) {
+        const x = map(i, 0, waveform.length, 0, width);
+        const y = map(waveform[i], -0.6, 0.6, height * 0.35, height * 0.65);
+        vertex(x, y);
+      }
+      endShape();
+      
+      // Add horizontal lines with glow
+      for (let i = 0; i < 5; i++) {
+        const yPos = height * (0.3 + i * 0.1);
+        const neonIndex = i % neonPalette.length;
+        const color = neonPalette[neonIndex];
+        
+        drawGlowingLine(0, yPos, width, yPos, color, 0.5);
+      }
+    }
+    
+    function drawGlowingLine(x1, y1, x2, y2, color, intensity) {
+      // Draw glow effect
+      for (let i = 3; i > 0; i--) {
+        strokeWeight(i * 2);
+        stroke(color[0], color[1], color[2], intensity * 255 / i);
+        line(x1, y1, x2, y2);
+      }
+    }
+    
+    function drawNeonParticles(spectrum, level) {
+      // Update and display all particles
+      for (let i = 0; i < particles.length; i++) {
+        const freqIndex = floor(map(i, 0, particles.length, 0, spectrum.length));
+        const freqValue = spectrum[freqIndex % spectrum.length];
+        
+        particles[i].update(freqValue, level);
+        particles[i].display();
+      }
+    }
+    
+    function drawNeonSpectrum(spectrum) {
+      const barWidth = width / 64;
+      
+      for (let i = 0; i < 64; i++) {
+        const x = i * barWidth;
+        const h = map(spectrum[i], 0, 255, 0, height);
+        
+        // Determine color based on frequency
+        let colorIndex;
+        if (i < 20) {
+          colorIndex = 0;  // Cyan for bass
+        } else if (i < 40) {
+          colorIndex = 1;  // Magenta for mid
+        } else {
+          colorIndex = 2;  // Green for treble
+        }
+        
+        const color = neonPalette[colorIndex];
+        
+        // Draw glow effect
+        for (let j = 5; j > 0; j--) {
+          noStroke();
+          fill(color[0], color[1], color[2], 255 / j);
+          rect(x, height - h, barWidth - 2, h, 5);
+        }
+        
+        // Draw solid bar
+        fill(color[0], color[1], color[2]);
+        rect(x, height - h, barWidth - 2, h, 5);
+      }
+      
+      // Add reflection effect
+      drawingContext.save();
+      drawingContext.scale(1, -0.3);
+      drawingContext.translate(0, -height * 2.5);
+      drawingContext.globalAlpha = 0.2;
+      
+      for (let i = 0; i < 64; i++) {
+        const x = i * barWidth;
+        const h = map(spectrum[i], 0, 255, 0, height);
+        
+        // Determine color based on frequency
+        let colorIndex;
+        if (i < 20) {
+          colorIndex = 0;
+        } else if (i < 40) {
+          colorIndex = 1;
+        } else {
+          colorIndex = 2;
+        }
+        
+        const color = neonPalette[colorIndex];
+        
+        // Draw reflection
+        fill(color[0], color[1], color[2]);
+        rect(x, height - h, barWidth - 2, h, 5);
+      }
+      
+      drawingContext.restore();
+    }
+    
+    class Particle {
+      constructor() {
+        this.pos = createVector(random(width), random(height));
+        this.vel = createVector(0, 0);
+        this.acc = createVector(0, 0);
+        this.size = random(3, 8);
+        this.color = neonPalette[floor(random(neonPalette.length))];
+        this.maxSpeed = random(2, 5);
+      }
+      
+      update(freqValue, level) {
+        // Add some perlin noise for natural movement
+        const noiseX = noise(this.pos.x * 0.01, this.pos.y * 0.01, frameCount * 0.01);
+        const noiseY = noise(this.pos.y * 0.01, this.pos.x * 0.01, frameCount * 0.01 + 1000);
+        
+        const angle = map(noiseX, 0, 1, 0, TWO_PI);
+        
+        // Add forces based on audio input
+        const forceX = map(noiseX, 0, 1, -0.5, 0.5) * freqValue * 0.05;
+        const forceY = map(noiseY, 0, 1, -0.5, 0.5) * freqValue * 0.05;
+        
+        this.acc.add(createVector(forceX, forceY));
+        
+        // Add force towards center when audio is loud
+        const centerForce = p5.Vector.sub(createVector(width/2, height/2), this.pos);
+        centerForce.normalize();
+        centerForce.mult(level * 2);
+        this.acc.add(centerForce);
+        
+        // Update velocity and position
+        this.vel.add(this.acc);
+        this.vel.limit(this.maxSpeed + level * 10);
+        this.pos.add(this.vel);
+        this.acc.mult(0);
+        
+        // Wrap around edges
+        this.pos.x = (this.pos.x + width) % width;
+        this.pos.y = (this.pos.y + height) % height;
+      }
+      
+      display() {
+        // Draw glow
+        for (let i = 5; i > 0; i--) {
+          fill(this.color[0], this.color[1], this.color[2], 255 / i);
+          noStroke();
+          circle(this.pos.x, this.pos.y, this.size * i);
+        }
+        
+        // Draw core
+        fill(255);
+        noStroke();
+        circle(this.pos.x, this.pos.y, this.size * 0.5);
+      }
+    }
+    
+    function playDemo() {
+      if (sound.isPlaying()) {
+        sound.stop();
+        document.getElementById('play-demo').textContent = 'Play Demo';
+      } else {
+        sound.play();
+        document.getElementById('play-demo').textContent = 'Stop Demo';
+      }
+    }
+    
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        if (sound && sound.isPlaying()) {
+          sound.stop();
+          document.getElementById('play-demo').textContent = 'Play Demo';
+        }
+        
+        // Load the uploaded audio file
+        sound = loadSound(URL.createObjectURL(file), () => {
+          sound.play();
+          document.getElementById('play-demo').textContent = 'Stop Audio';
+        });
+      }
+    }
+    
+    function setVisualizer(index) {
+      currentVisualizer = index;
+      
+      // Highlight selected button
+      const buttons = document.querySelectorAll('.controls button');
+      buttons.forEach((btn, i) => {
+        if (i-1 === index-1) {
+          btn.style.boxShadow = `0 0 20px ${index === 1 ? '#0ff' : index === 2 ? '#f0f' : index === 3 ? '#0f0' : '#ff0'}`;
+        } else if (i > 0) {
+          btn.style.boxShadow = `0 0 10px ${i === 1 ? '#0ff' : i === 2 ? '#f0f' : i === 3 ? '#0f0' : '#ff0'}`;
+        }
+      });
+    }
+    
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight * 0.8);
+    }
+  </script>
+</body>
+</html>
